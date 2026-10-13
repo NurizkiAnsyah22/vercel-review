@@ -1,0 +1,9 @@
+# Never upload local secrets or build artifacts to Vercel.
+# The runtime must rely ONLY on the project's Environment Variables.
+.env
+.env.*
+ck.txt
+*.tsbuildinfo
+node_modules
+.git
+.vercel

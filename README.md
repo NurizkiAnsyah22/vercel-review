@@ -1,5 +1,7 @@
 # Virai Review Card — Vercel (Serverless)
 
+> **Live:** https://vercel-review-two.vercel.app — admin di `/login`, aktivasi di `/activate`.
+
 Platform kartu fisik (QR + NFC) untuk UMKM yang mengarahkan pelanggan langsung ke form
 review Google. Aplikasi ini adalah versi sederhana yang berjalan **sepenuhnya di Vercel**
 tanpa VPS, Docker, Nginx, Redis, worker, maupun WhatsApp Gateway.
