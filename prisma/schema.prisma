@@ -1,0 +1,345 @@
+// Virai Review Card - Prisma schema
+// Domain model for the MVP.
+//
+// Core principle: a physical Card is NOT the identity of a business.
+// Card <-> Business is a time-bound assignment (see CardAssignment) so a card
+// can be suspended / reset / reassigned without changing the printed QR/NFC.
+
+generator client {
+  provider = "prisma-client-js"
+  // "native" keeps local/dev working; rhel-openssl-3.0.x is the engine target
+  // used by Vercel's serverless runtime (AWS Lambda/Amazon Linux).
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Unpooled connection used by Prisma Migrate. On Neon/Supabase set this to the
+  // direct (non-pooled) URL; when not using a pooler it can equal DATABASE_URL.
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------- Enums -----------------------------
+
+enum CardStatus {
+  UNACTIVATED
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum BusinessStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  SUSPENDED
+}
+
+enum InteractionSource {
+  QR
+  NFC
+  UNKNOWN
+}
+
+enum AssignmentAction {
+  ACTIVATED
+  REACTIVATED
+  RESET
+  REASSIGNED
+  SUSPENDED
+}
+
+enum MonitoringJobStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReviewCheckResult {
+  NO_CHANGE
+  INCREASED
+  ERROR
+}
+
+enum NotificationType {
+  REVIEW_INCREASED
+  ACTIVATION_SUCCESS
+}
+
+enum NotificationChannel {
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// Order / production status, kept SEPARATE from the technical Card status.
+enum OrderStatus {
+  WAITING_ACTIVATION
+  ACTIVATION_RECEIVED
+  PROCESSING
+  ACTIVATED
+  READY_TO_PRINT
+  READY_TO_SHIP
+  SHIPPED
+  CANCELLED
+  // Legacy value kept for old rows.
+  PAID
+}
+
+// ----------------------------- Models -----------------------------
+
+model Owner {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(120)
+  whatsappNumber String   @db.VarChar(32)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businesses Business[]
+
+  @@map("owners")
+}
+
+model Business {
+  id                   String         @id @default(uuid()) @db.Uuid
+  ownerId              String         @db.Uuid
+  name                 String         @db.VarChar(160)
+  whatsappNumber       String         @db.VarChar(32)
+  googleMapsUrl        String?        @db.Text
+  placeId              String?        @db.VarChar(64)
+  googleReviewUrl      String?        @db.Text
+  googleRating         Decimal?       @db.Decimal(2, 1)
+  googleReviewCount    Int?
+  lastKnownReviewCount Int?
+  status               BusinessStatus @default(ACTIVE)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  owner          Owner            @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  cards          Card[]
+  assignments    CardAssignment[]
+  interactions   Interaction[]
+  monitoringJobs MonitoringJob[]
+  notifications  Notification[]
+  orders         Order[]
+
+  @@index([placeId])
+  @@index([ownerId])
+  @@map("businesses")
+}
+
+model Card {
+  id     String @id @default(uuid()) @db.Uuid
+  /// Sequential, human-readable Card ID (printed as "Card ID", NOT a secret).
+  code   String @unique @db.VarChar(32)
+  /// Opaque token used by the UNIQUE NFC tag of this card (/r/{publicToken}).
+  publicToken String @unique @db.VarChar(32)
+  /// Random opaque "Kode Aktivasi" printed on the card (QR Master flow).
+  /// Never derived from `code`, so knowing a Card ID can never activate a card.
+  activationCode String? @unique @db.VarChar(32)
+  status      CardStatus @default(UNACTIVATED)
+  businessId  String?    @db.Uuid
+  activatedAt DateTime?
+  suspendedAt DateTime?
+  // QR assets generated once when the card becomes ACTIVE (immutable token).
+  qrPngPath     String?  @db.VarChar(255)
+  qrSvgPath     String?  @db.VarChar(255)
+  qrGeneratedAt DateTime?
+  qrError       String?  @db.Text
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  business     Business?        @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  assignments  CardAssignment[]
+  interactions Interaction[]
+  order        Order?
+
+  @@index([status])
+  @@index([businessId])
+  @@map("cards")
+}
+
+model CardAssignment {
+  id           String           @id @default(uuid()) @db.Uuid
+  cardId       String           @db.Uuid
+  businessId   String           @db.Uuid
+  action       AssignmentAction
+  assignedAt   DateTime         @default(now())
+  unassignedAt DateTime?
+  note         String?          @db.Text
+
+  card     Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@index([businessId])
+  @@map("card_assignments")
+}
+
+model Interaction {
+  id            String            @id @default(uuid()) @db.Uuid
+  cardId        String            @db.Uuid
+  businessId    String?           @db.Uuid
+  source        InteractionSource @default(UNKNOWN)
+  ipHash        String?           @db.VarChar(64)
+  userAgentHash String?           @db.VarChar(64)
+  createdAt     DateTime          @default(now())
+
+  card           Card            @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  business       Business?       @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  monitoringJobs MonitoringJob[]
+
+  @@index([cardId])
+  @@index([businessId])
+  @@index([createdAt])
+  @@map("interactions")
+}
+
+model MonitoringJob {
+  id                       String              @id @default(uuid()) @db.Uuid
+  businessId               String              @db.Uuid
+  status                   MonitoringJobStatus @default(SCHEDULED)
+  baselineReviewCount      Int?
+  startedFromInteractionId String?             @db.Uuid
+  nextCheckAt              DateTime?
+  checksPerformed          Int                 @default(0)
+  expiresAt                DateTime?
+  lastError                String?             @db.Text
+  // Set to businessId while the job is active (SCHEDULED/RUNNING) and null once
+  // finished. The unique constraint guarantees ONE active job per business.
+  activeKey                String?             @unique @db.Uuid
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  business              Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  startedFromInteraction Interaction? @relation(fields: [startedFromInteractionId], references: [id], onDelete: SetNull)
+  checks                ReviewCheck[]
+
+  @@index([businessId])
+  @@index([status])
+  @@index([nextCheckAt])
+  @@map("monitoring_jobs")
+}
+
+model ReviewCheck {
+  id                String            @id @default(uuid()) @db.Uuid
+  jobId             String            @db.Uuid
+  checkedAt         DateTime          @default(now())
+  reviewCountBefore Int?
+  reviewCountAfter  Int?
+  delta             Int?
+  result            ReviewCheckResult
+  source            String            @default("PLACES_API") @db.VarChar(32)
+  errorMessage      String?           @db.Text
+
+  job MonitoringJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([checkedAt])
+  @@map("review_checks")
+}
+
+model Notification {
+  id                String              @id @default(uuid()) @db.Uuid
+  businessId        String              @db.Uuid
+  type              NotificationType    @default(REVIEW_INCREASED)
+  channel           NotificationChannel @default(WHATSAPP)
+  recipient         String              @db.VarChar(32)
+  message           String              @db.Text
+  status            NotificationStatus  @default(PENDING)
+  providerMessageId String?             @db.VarChar(128)
+  error             String?             @db.Text
+  createdAt         DateTime            @default(now())
+  sentAt            DateTime?
+  updatedAt         DateTime            @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// Generic atomic counter, used to generate sequential card codes (CARD-000001).
+model Counter {
+  key       String   @id @db.VarChar(64)
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@map("counters")
+}
+
+/// Audit trail for sensitive admin actions (card management, WhatsApp gateway).
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorEmail String   @db.VarChar(160)
+  action     String   @db.VarChar(64)
+  targetType String?  @db.VarChar(64)
+  targetId   String?  @db.VarChar(64)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorEmail])
+  @@index([action])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
+}
+
+/// A sales order: reserves a physical card for a buyer and tracks production.
+/// The buyer's WhatsApp number is how an incoming activation message is matched.
+model Order {
+  id                  String      @id @default(uuid()) @db.Uuid
+  cardId              String      @unique @db.Uuid
+  businessId          String?     @db.Uuid
+  buyerName           String?     @db.VarChar(120)
+  buyerWhatsappNumber String      @db.VarChar(32)
+  status              OrderStatus @default(WAITING_ACTIVATION)
+  note                String?     @db.Text
+  activatedAt         DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  card     Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  messages IncomingMessage[]
+
+  @@index([buyerWhatsappNumber])
+  @@index([status])
+  @@map("orders")
+}
+
+/// Log of incoming WhatsApp messages (idempotency + audit + dashboard).
+model IncomingMessage {
+  id                String   @id @default(uuid()) @db.Uuid
+  providerMessageId String   @unique @db.VarChar(128)
+  fromNumber        String   @db.VarChar(32)
+  pushName          String?  @db.VarChar(120)
+  text              String   @db.Text
+  orderId           String?  @db.Uuid
+  result            String   @db.VarChar(32)
+  detail            String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([fromNumber])
+  @@index([createdAt])
+  @@map("incoming_messages")
+}
+
+/// Fixed-window rate-limit counters. Replaces the former Redis-based limiter so
+/// the app stays fully serverless (Vercel) with no external cache dependency.
+model RateLimitBucket {
+  key       String   @id @db.VarChar(200)
+  count     Int      @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@map("rate_limit_buckets")
+}

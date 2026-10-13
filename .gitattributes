@@ -1,0 +1,6 @@
+# Shell scripts MUST stay LF: a CRLF shebang makes a container entrypoint
+# unrunnable ("exec ...: no such file or directory").
+*.sh text eol=lf
+
+# Keep the repo consistent regardless of the developer's OS.
+* text=auto
