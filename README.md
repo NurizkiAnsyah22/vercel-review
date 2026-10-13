@@ -84,8 +84,8 @@ Lihat [`.env.example`](.env.example). Ringkasan:
 | `DATABASE_URL` | ✅ | Koneksi runtime PostgreSQL (boleh pooled). |
 | `DIRECT_URL` | ✅ | Koneksi direct untuk Prisma Migrate (sama dengan `DATABASE_URL` bila tanpa pooler). |
 | `SESSION_SECRET` | ✅ | Secret signing cookie admin (min. 32 karakter). |
-| `ADMIN_EMAIL` | ✅ | Email admin. |
-| `ADMIN_PASSWORD_HASH` | ✅ | Hash bcrypt password admin (lihat `npm run hash-password`). |
+| `ADMIN_EMAIL` | — | Email admin (fallback bila email belum ada di tabel `admin_users`). |
+| `ADMIN_PASSWORD_HASH` | — | Hash bcrypt admin fallback (lihat `npm run hash-password`). |
 | `APP_BASE_URL` | — | Base URL internal (default `http://localhost:3000`). |
 | `PUBLIC_APP_URL` | — | Base URL publik yang ditanam pada QR/NFC (mis. `https://<project>.vercel.app`). |
 | `GOOGLE_PLACES_API_KEY` | — | Opsional; tanpa ini dipakai jalur gratis dari link Maps. |
@@ -94,12 +94,24 @@ Lihat [`.env.example`](.env.example). Ringkasan:
 
 > **Jangan commit** file `.env` berisi kredensial. File `.env` sudah masuk `.gitignore`.
 
-### Membuat hash password admin
+### Membuat hash password admin (fallback)
 
 ```bash
 npm run hash-password -- "password-anda"
 # tempel hasilnya ke ADMIN_PASSWORD_HASH
 ```
+
+## Kelola Akun Admin
+
+Akun admin disimpan di tabel `admin_users`, sehingga **banyak admin** didukung dan
+password bisa diubah tanpa redeploy:
+
+- **Tambah / ubah akun:** `npm run admin:add -- "email@contoh.com" "password" "Nama"`
+- **Ubah password sendiri:** login → **Settings → UBAH PASSWORD** (`POST /api/admin/account/password`).
+- Daftar akun admin tampil di **Settings → AKUN ADMIN** (tanpa hash password).
+
+`ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH` hanya dipakai sebagai *fallback* ketika email
+belum ada di `admin_users` (mis. saat database baru di-seed).
 
 ## Development Lokal
 
