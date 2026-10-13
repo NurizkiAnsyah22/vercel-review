@@ -1,9 +1,7 @@
 import Badge from "@/components/ui/Badge";
 import PageHeader from "@/components/ui/PageHeader";
 import { getPublicAppUrl } from "@/lib/public-url";
-import { formatDateTimeID } from "@/lib/status";
 import { getAdminSession } from "@/server/auth/guard";
-import { listAdminUsers } from "@/server/auth/admin-users";
 import { getEnv } from "@/server/config/env";
 import ChangePasswordForm from "./ChangePasswordForm";
 
@@ -21,7 +19,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function SettingsPage() {
   const env = getEnv();
   const session = await getAdminSession();
-  const admins = await listAdminUsers();
 
   return (
     <>
@@ -59,51 +56,6 @@ export default async function SettingsPage() {
           </Row>
           <Row label="Rate limit /r">{`${env.RATE_LIMIT_REDIRECT_PER_MINUTE} / menit`}</Row>
           <Row label="Rate limit aktivasi">{`${env.RATE_LIMIT_ACTIVATE_PER_HOUR} / jam`}</Row>
-        </section>
-
-        <section className="card">
-          <div className="card-title">AKUN ADMIN</div>
-          <div className="divider" />
-          <Row label="Login sebagai">
-            <span className="mono">{session?.sub ?? "-"}</span>
-          </Row>
-          <div className="table-wrap" style={{ marginTop: 8 }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Nama</th>
-                  <th>Status</th>
-                  <th>Login Terakhir</th>
-                </tr>
-              </thead>
-              <tbody>
-                {admins.map((admin) => (
-                  <tr key={admin.id}>
-                    <td className="mono">{admin.email}</td>
-                    <td>{admin.name ?? "-"}</td>
-                    <td>
-                      <Badge tone={admin.isActive ? "success" : "danger"}>
-                        {admin.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </td>
-                    <td>{admin.lastLoginAt ? formatDateTimeID(admin.lastLoginAt) : "-"}</td>
-                  </tr>
-                ))}
-                {admins.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="muted">
-                      Belum ada akun admin di database (memakai admin dari environment).
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Mendukung beberapa akun admin. Untuk menambah akun baru gunakan skrip
-            <span className="mono">{"npm run admin:add -- <email> <password> <nama>"}</span>
-          </p>
         </section>
 
         <section className="card">
