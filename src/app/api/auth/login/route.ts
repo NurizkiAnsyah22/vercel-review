@@ -35,15 +35,15 @@ export async function POST(request: Request) {
     return jsonError("Invalid payload", 422, parsed.error.flatten().fieldErrors);
   }
 
-  const valid = await verifyAdminCredentials(parsed.data.email, parsed.data.password);
-  if (!valid) {
+  const authenticatedEmail = await verifyAdminCredentials(parsed.data.email, parsed.data.password);
+  if (!authenticatedEmail) {
     return jsonError("Invalid email or password", 401);
   }
 
   const env = getEnv();
-  const token = createSessionToken(parsed.data.email);
+  const token = createSessionToken(authenticatedEmail);
 
-  const response = NextResponse.json({ data: { email: parsed.data.email } });
+  const response = NextResponse.json({ data: { email: authenticatedEmail } });
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: token,

@@ -1,7 +1,11 @@
 import Badge from "@/components/ui/Badge";
 import PageHeader from "@/components/ui/PageHeader";
 import { getPublicAppUrl } from "@/lib/public-url";
+import { formatDateTimeID } from "@/lib/status";
+import { getAdminSession } from "@/server/auth/guard";
+import { listAdminUsers } from "@/server/auth/admin-users";
 import { getEnv } from "@/server/config/env";
+import ChangePasswordForm from "./ChangePasswordForm";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +20,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 export default async function SettingsPage() {
   const env = getEnv();
+  const session = await getAdminSession();
+  const admins = await listAdminUsers();
 
   return (
     <>
       <PageHeader
         title="Settings"
-        subtitle="Konfigurasi yang sedang aktif. Semua nilai di bawah read-only (diatur lewat environment server)."
+        subtitle="Konfigurasi yang sedang aktif dan pengaturan akun admin."
       />
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))" }}>
@@ -56,6 +62,57 @@ export default async function SettingsPage() {
         </section>
 
         <section className="card">
+          <div className="card-title">AKUN ADMIN</div>
+          <div className="divider" />
+          <Row label="Login sebagai">
+            <span className="mono">{session?.sub ?? "-"}</span>
+          </Row>
+          <div className="table-wrap" style={{ marginTop: 8 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Nama</th>
+                  <th>Status</th>
+                  <th>Login Terakhir</th>
+                </tr>
+              </thead>
+              <tbody>
+                {admins.map((admin) => (
+                  <tr key={admin.id}>
+                    <td className="mono">{admin.email}</td>
+                    <td>{admin.name ?? "-"}</td>
+                    <td>
+                      <Badge tone={admin.isActive ? "success" : "danger"}>
+                        {admin.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </td>
+                    <td>{admin.lastLoginAt ? formatDateTimeID(admin.lastLoginAt) : "-"}</td>
+                  </tr>
+                ))}
+                {admins.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Belum ada akun admin di database (memakai admin dari environment).
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Mendukung beberapa akun admin. Untuk menambah akun baru gunakan skrip
+            <span className="mono">{"npm run admin:add -- <email> <password> <nama>"}</span>
+          </p>
+        </section>
+
+        <section className="card">
+          <div className="card-title">UBAH PASSWORD</div>
+          <div className="divider" />
+          <ChangePasswordForm email={session?.sub ?? ""} />
+        </section>
+
+        <section className="card">
           <div className="card-title">BELUM TERSEDIA (placeholder)</div>
           <div className="divider" />
           <p className="muted">
@@ -63,7 +120,8 @@ export default async function SettingsPage() {
             diaktifkan:
           </p>
           <ul className="muted" style={{ marginTop: 8, paddingLeft: 18 }}>
-            <li>Edit profil admin / multi-user & role (saat ini satu admin dari environment).</li>
+            <li>Role / hak akses granular (saat ini semua admin punya akses penuh).</li>
+            <li>Kelola akun admin dari UI (tambah/nonaktifkan).</li>
             <li>Pengaturan pembayaran / invoice.</li>
             <li>Integrasi Google Business Profile (OAuth) — di luar MVP.</li>
           </ul>

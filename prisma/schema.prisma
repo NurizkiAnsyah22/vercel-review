@@ -147,7 +147,8 @@ model Card {
   businessId  String?    @db.Uuid
   activatedAt DateTime?
   suspendedAt DateTime?
-  // QR assets generated once when the card becomes ACTIVE (immutable token).
+  // QR assets are generated on demand from the immutable token; these columns
+  // are kept for backward compatibility with pre-Vercel rows.
   qrPngPath     String?  @db.VarChar(255)
   qrSvgPath     String?  @db.VarChar(255)
   qrGeneratedAt DateTime?
@@ -276,7 +277,7 @@ model Counter {
   @@map("counters")
 }
 
-/// Audit trail for sensitive admin actions (card management, WhatsApp gateway).
+/// Audit trail for sensitive admin actions (card management, admin account).
 model AdminAuditLog {
   id         String   @id @default(uuid()) @db.Uuid
   actorEmail String   @db.VarChar(160)
@@ -342,4 +343,20 @@ model RateLimitBucket {
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
 
   @@map("rate_limit_buckets")
+}
+
+/// Admin accounts. Supports MULTIPLE admins and per-user password changes.
+/// The legacy single env admin (ADMIN_EMAIL / ADMIN_PASSWORD_HASH) is still
+/// accepted as a fallback when the email has no row here.
+model AdminUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(160)
+  passwordHash String    @map("password_hash") @db.VarChar(120)
+  name         String?   @db.VarChar(120)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("admin_users")
 }
